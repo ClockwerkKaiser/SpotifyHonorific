@@ -6,6 +6,7 @@ using Dalamud.Plugin.Services;
 using SpotifyHonorific.Windows;
 using SpotifyHonorific.Updaters;
 using SpotifyHonorific.Activities;
+using System;
 
 namespace SpotifyHonorific;
 
@@ -54,8 +55,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        var subcommand = args.Split(" ", 2)[0];
-        if (subcommand == "config")
+        if (args.AsSpan().Trim().Equals("config", StringComparison.OrdinalIgnoreCase))
         {
             ToggleConfigUI();
         }

@@ -8,7 +8,7 @@ namespace SpotifyHonorific.Activities;
 [Serializable]
 public class ActivityConfig
 {
-    public static readonly int DEFAULT_VERSION = 3;
+    public const int DEFAULT_VERSION = 3;
     private static readonly List<ActivityConfig> DEFAULTS = [
         new() {
             Name = $"Spotify (V{DEFAULT_VERSION})",

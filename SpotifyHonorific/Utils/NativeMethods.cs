@@ -1,9 +1,11 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
+using System.Security;
 
 namespace SpotifyHonorific.Utils;
 
-internal class NativeMethods
+[SuppressUnmanagedCodeSecurity]
+internal static class NativeMethods
 {
     [StructLayout(LayoutKind.Sequential)]
     internal struct LASTINPUTINFO
@@ -12,7 +14,7 @@ internal class NativeMethods
         public uint dwTime;
     }
 
-    public class IdleTimeFinder
+    internal static class IdleTimeFinder
     {
         [DllImport("User32.dll")]
         private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
