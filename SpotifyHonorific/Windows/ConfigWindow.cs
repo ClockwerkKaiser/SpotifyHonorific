@@ -54,12 +54,6 @@ public class ConfigWindow : Window
         }
 
         ImGui.SameLine();
-        var stopPollingWhenAfk = Config.StopPollingWhenAfk;
-        if (ImGui.Checkbox("Stop polling when AFK##stopAfk", ref stopPollingWhenAfk))
-        {
-            Config.StopPollingWhenAfk = stopPollingWhenAfk;
-            Config.Save();
-        }
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
         if (ImGui.IsItemHovered())

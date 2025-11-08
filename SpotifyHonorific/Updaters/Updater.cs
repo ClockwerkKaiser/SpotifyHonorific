@@ -79,7 +79,7 @@ public class Updater : IDisposable
         {
             if (!_hasLoggedAfk)
             {
-                PluginLog.Debug("[SpotifyHonorific] Player is AFK and no music is playing, stopping polling.");
+                PluginLog.Debug("Player is AFK and no music is playing, stopping polling.");
                 _hasLoggedAfk = true;
             }
             ClearTitle();
@@ -124,7 +124,7 @@ public class Updater : IDisposable
 
         if (Config.EnableDebugLogging)
         {
-            PluginLog.Debug($"[SpotifyHonorific] POLLING NOW. Timer: {_pollingTimer:F2}/{currentInterval}s | IsPlaying: {_isMusicPlaying}");
+            PluginLog.Debug($"POLLING NOW. Timer: {_pollingTimer:F2}/{currentInterval}s | IsPlaying: {_isMusicPlaying}");
         }
 
         _pollingTimer = 0.0;
@@ -203,7 +203,10 @@ public class Updater : IDisposable
                     var serializedData = JsonConvert.SerializeObject(data, Formatting.Indented);
                     if (serializedData == UpdatedTitleJson) return;
 
-                    PluginLog.Debug($"Call Honorific SetCharacterTitle IPC with:\n{serializedData}");
+                    if (Config.EnableDebugLogging)
+                    {
+                        PluginLog.Debug($"Call Honorific SetCharacterTitle IPC with:\n{serializedData}");
+                    }
                     SetCharacterTitleSubscriber.InvokeAction(0, serializedData);
                     UpdatedTitleJson = serializedData;
                 };
