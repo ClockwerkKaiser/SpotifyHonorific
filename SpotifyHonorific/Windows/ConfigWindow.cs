@@ -46,6 +46,16 @@ public class ConfigWindow : Window
 
     public override void Draw()
     {
+        DrawMainSettings();
+        ImGui.Separator();
+        DrawSpotifySetup();
+        ImGui.Separator();
+        ImGui.Spacing();
+        DrawActivityConfigTabs();
+    }
+
+    private void DrawMainSettings()
+    {
         var enabled = Config.Enabled;
         if (ImGui.Checkbox("Enabled##enabled", ref enabled))
         {
@@ -74,8 +84,10 @@ public class ConfigWindow : Window
         {
             ImGui.SetTooltip("Prints detailed status information to the FFXIV plugin log (open with /xllog).\nThis is very spammy and should be kept off unless you are debugging.");
         }
+    }
 
-        ImGui.Separator();
+    private void DrawSpotifySetup()
+    {
         ImGui.Text("Spotify Setup");
 
         if (ImGui.InputText("Spotify Client ID", ref _spotifyClientIdBuffer, 100))
@@ -121,10 +133,10 @@ public class ConfigWindow : Window
                 "7. Click the 'Authenticate with Spotify' button (here) to log in."
             );
         }
+    }
 
-        ImGui.Separator();
-        ImGui.Spacing();
-
+    private void DrawActivityConfigTabs()
+    {
         if (ImGui.Button("New##activityConfigsNew"))
         {
             Config.ActivityConfigs.Add(new());
@@ -159,157 +171,165 @@ public class ConfigWindow : Window
         {
             foreach (var activityConfig in Config.ActivityConfigs.ToList())
             {
-                var activityConfigId = $"activityConfigs{activityConfig.GetHashCode()}";
-
-                var name = activityConfig.Name;
-                if (ImGui.BeginTabItem($"{(name.IsNullOrWhitespace() ? "(Blank)" : name)}###{activityConfigId}TabItem"))
-                {
-                    ImGui.Indent(10);
-
-                    var activityConfigEnabled = activityConfig.Enabled;
-                    if (ImGui.Checkbox($"Enabled###{activityConfigId}enabled", ref activityConfigEnabled))
-                    {
-                        activityConfig.Enabled = activityConfigEnabled;
-                        Config.Save();
-                    }
-
-                    ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - (ImGui.CalcTextSize("Delete").X + ImGui.GetStyle().FramePadding.X * 2.0f));
-                    ImGui.PushStyleColor(ImGuiCol.Button, ImGuiColors.DalamudRed);
-                    if (ImGui.Button($"Delete###{activityConfigId}Delete"))
-                    {
-                        Config.ActivityConfigs.Remove(activityConfig);
-                        Config.Save();
-                    }
-                    ImGui.PopStyleColor();
-
-                    if (ImGui.InputText($"Name###{activityConfigId}Name", ref name, ushort.MaxValue))
-                    {
-                        activityConfig.Name = name;
-                        Config.Save();
-                    }
-
-                    var priority = activityConfig.Priority;
-                    if (ImGui.InputInt($"Priority###{activityConfigId}Priority", ref priority, 1))
-                    {
-                        activityConfig.Priority = priority;
-                        Config.Save();
-                    }
-
-                    if (ImGui.CollapsingHeader($"Available Template Variables###{activityConfigId}Properties"))
-                    {
-                        if (ImGui.BeginTable($"{activityConfigId}Properties", 2, ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY | ImGuiTableFlags.Resizable, new(ImGui.GetWindowWidth(), 200)))
-                        {
-                            ImGui.TableSetupColumn($"Name###{activityConfigId}PropertyNames", ImGuiTableColumnFlags.WidthStretch);
-                            ImGui.TableSetupColumn($"Type###{activityConfigId}PropertyTypes", ImGuiTableColumnFlags.WidthStretch);
-                            ImGui.TableHeadersRow();
-
-                            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Name"); ImGui.TableNextColumn(); ImGui.Text("System.String");
-                            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Artists"); ImGui.TableNextColumn(); ImGui.Text("System.Collections.Generic.List<SimpleArtist>");
-                            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Artists[0].Name"); ImGui.TableNextColumn(); ImGui.Text("System.String");
-                            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Album.Name"); ImGui.TableNextColumn(); ImGui.Text("System.String");
-                            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.DurationMs"); ImGui.TableNextColumn(); ImGui.Text("System.Int32");
-                            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Popularity"); ImGui.TableNextColumn(); ImGui.Text("System.Int32");
-
-                            foreach (var property in typeof(UpdaterContext).GetProperties())
-                            {
-                                if (ImGui.TableNextColumn())
-                                {
-                                    ImGui.Text($"Context.{property.Name}");
-                                }
-                                if (ImGui.TableNextColumn())
-                                {
-                                    ImGui.Text(property.PropertyType.ScriptPrettyName());
-                                }
-                            }
-
-                            ImGui.EndTable();
-                        }
-                    }
-
-                    var filterTemplate = activityConfig.FilterTemplate;
-
-                    var availableWidth = ImGui.GetContentRegionAvail().X;
-                    var filterTemplateInput = ImGui.InputTextMultiline($"Filter Template (scriban)###{activityConfigId}FilterTemplate", ref filterTemplate, ushort.MaxValue, new(availableWidth, 50));
-
-                    if (ImGui.IsItemHovered())
-                    {
-                        if (!TryParseTemplate(filterTemplate, out var errorMessages))
-                        {
-                            using (ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudRed))
-                            {
-                                ImGui.SetTooltip(string.Join("\n", errorMessages));
-                            }
-                        }
-                        else
-                        {
-                            ImGui.SetTooltip("Expects parsable boolean as output if provided\nSyntax reference available on https://github.com/scriban/scriban");
-                        }
-                    }
-                    if (filterTemplateInput)
-                    {
-                        activityConfig.FilterTemplate = filterTemplate;
-                        Config.Save();
-                    }
-
-                    var titleTemplate = activityConfig.TitleTemplate;
-
-                    var availableHeight = ImGui.GetContentRegionAvail().Y;
-                    var titleTemplateInput = ImGui.InputTextMultiline($"Title Template (scriban)###{activityConfigId}TitleTemplate", ref titleTemplate, ushort.MaxValue, new(availableWidth, availableHeight - 40));
-
-                    if (ImGui.IsItemHovered())
-                    {
-                        if (!TryParseTemplate(titleTemplate, out var errorMessages))
-                        {
-                            using (ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudRed))
-                            {
-                                ImGui.SetTooltip(string.Join("\n", errorMessages));
-                            }
-                        }
-                        else
-                        {
-                            ImGui.SetTooltip("Expects single line as output (max: 32 characters)\nSyntax reference available on https://github.com/scriban/scriban");
-                        }
-                    }
-                    if (titleTemplateInput)
-                    {
-                        activityConfig.TitleTemplate = titleTemplate;
-                        Config.Save();
-                    }
-
-                    var isPrefix = activityConfig.IsPrefix;
-                    if (ImGui.Checkbox($"Prefix###{activityConfigId}Prefix", ref isPrefix))
-                    {
-                        activityConfig.IsPrefix = isPrefix;
-                        Config.Save();
-                    }
-                    ImGui.SameLine();
-                    ImGui.Spacing();
-                    ImGui.SameLine();
-
-                    var checkboxSize = new Vector2(ImGui.GetTextLineHeightWithSpacing(), ImGui.GetTextLineHeightWithSpacing());
-
-                    var color = activityConfig.Color;
-                    if (ImGuiHelper.DrawColorPicker($"Color###{activityConfigId}Color", ref color, checkboxSize))
-                    {
-                        activityConfig.Color = color;
-                        Config.Save();
-                    }
-
-                    ImGui.SameLine();
-                    ImGui.Spacing();
-                    ImGui.SameLine();
-                    var glow = activityConfig.Glow;
-                    if (ImGuiHelper.DrawColorPicker($"Glow###{activityConfigId}Glow", ref glow, checkboxSize))
-                    {
-                        activityConfig.Glow = glow;
-                        Config.Save();
-                    }
-
-                    ImGui.Unindent();
-                    ImGui.EndTabItem();
-                }
+                DrawSingleActivityTab(activityConfig);
             }
             ImGui.EndTabBar();
+        }
+    }
+
+    private void DrawSingleActivityTab(ActivityConfig activityConfig)
+    {
+        var activityConfigId = $"activityConfigs{activityConfig.GetHashCode()}";
+        var name = activityConfig.Name;
+        var tabTitle = $"{(name.IsNullOrWhitespace() ? "(Blank)" : name)}###{activityConfigId}TabItem";
+
+        if (!ImGui.BeginTabItem(tabTitle)) return;
+
+        ImGui.Indent(10);
+
+        var activityConfigEnabled = activityConfig.Enabled;
+        if (ImGui.Checkbox($"Enabled###{activityConfigId}enabled", ref activityConfigEnabled))
+        {
+            activityConfig.Enabled = activityConfigEnabled;
+            Config.Save();
+        }
+
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - (ImGui.CalcTextSize("Delete").X + ImGui.GetStyle().FramePadding.X * 2.0f));
+        ImGui.PushStyleColor(ImGuiCol.Button, ImGuiColors.DalamudRed);
+        if (ImGui.Button($"Delete###{activityConfigId}Delete"))
+        {
+            Config.ActivityConfigs.Remove(activityConfig);
+            Config.Save();
+        }
+        ImGui.PopStyleColor();
+
+        if (ImGui.InputText($"Name###{activityConfigId}Name", ref name, ushort.MaxValue))
+        {
+            activityConfig.Name = name;
+            Config.Save();
+        }
+
+        var priority = activityConfig.Priority;
+        if (ImGui.InputInt($"Priority###{activityConfigId}Priority", ref priority, 1))
+        {
+            activityConfig.Priority = priority;
+            Config.Save();
+        }
+
+        DrawTemplateVariablesTable(activityConfigId);
+
+        var filterTemplate = activityConfig.FilterTemplate;
+        var titleTemplate = activityConfig.TitleTemplate;
+        var availableWidth = ImGui.GetContentRegionAvail().X;
+
+        if (DrawTemplateInput($"Filter Template (scriban)###{activityConfigId}FilterTemplate",
+                             ref filterTemplate,
+                             new(availableWidth, 50),
+                             "Expects parsable boolean as output if provided\nSyntax reference available on https://github.com/scriban/scriban"))
+        {
+            activityConfig.FilterTemplate = filterTemplate;
+            Config.Save();
+        }
+
+        var availableHeight = ImGui.GetContentRegionAvail().Y;
+        if (DrawTemplateInput($"Title Template (scriban)###{activityConfigId}TitleTemplate",
+                             ref titleTemplate,
+                             new(availableWidth, availableHeight - 40),
+                             "Expects single line as output (max: 32 characters)\nSyntax reference available on https://github.com/scriban/scriban"))
+        {
+            activityConfig.TitleTemplate = titleTemplate;
+            Config.Save();
+        }
+
+        DrawTitleStyleSettings(activityConfig, activityConfigId);
+
+        ImGui.Unindent();
+        ImGui.EndTabItem();
+    }
+
+    private void DrawTemplateVariablesTable(string activityConfigId)
+    {
+        if (!ImGui.CollapsingHeader($"Available Template Variables###{activityConfigId}Properties")) return;
+
+        if (ImGui.BeginTable($"{activityConfigId}Properties", 2, ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY | ImGuiTableFlags.Resizable, new(ImGui.GetWindowWidth(), 200)))
+        {
+            ImGui.TableSetupColumn($"Name###{activityConfigId}PropertyNames", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn($"Type###{activityConfigId}PropertyTypes", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableHeadersRow();
+
+            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Name"); ImGui.TableNextColumn(); ImGui.Text("System.String");
+            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Artists"); ImGui.TableNextColumn(); ImGui.Text("System.Collections.Generic.List<SimpleArtist>");
+            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Artists[0].Name"); ImGui.TableNextColumn(); ImGui.Text("System.String");
+            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Album.Name"); ImGui.TableNextColumn(); ImGui.Text("System.String");
+            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.DurationMs"); ImGui.TableNextColumn(); ImGui.Text("System.Int32");
+            ImGui.TableNextRow(); ImGui.TableNextColumn(); ImGui.Text("Activity.Popularity"); ImGui.TableNextColumn(); ImGui.Text("System.Int32");
+
+            foreach (var property in typeof(UpdaterContext).GetProperties())
+            {
+                if (ImGui.TableNextColumn())
+                {
+                    ImGui.Text($"Context.{property.Name}");
+                }
+                if (ImGui.TableNextColumn())
+                {
+                    ImGui.Text(property.PropertyType.ScriptPrettyName());
+                }
+            }
+
+            ImGui.EndTable();
+        }
+    }
+
+    private bool DrawTemplateInput(string label, ref string template, Vector2 size, string validTooltip)
+    {
+        var changed = ImGui.InputTextMultiline(label, ref template, ushort.MaxValue, size);
+
+        if (ImGui.IsItemHovered())
+        {
+            if (!TryParseTemplate(template, out var errorMessages))
+            {
+                using (ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudRed))
+                {
+                    ImGui.SetTooltip(string.Join("\n", errorMessages));
+                }
+            }
+            else
+            {
+                ImGui.SetTooltip(validTooltip);
+            }
+        }
+        return changed;
+    }
+
+    private void DrawTitleStyleSettings(ActivityConfig activityConfig, string activityConfigId)
+    {
+        var isPrefix = activityConfig.IsPrefix;
+        if (ImGui.Checkbox($"Prefix###{activityConfigId}Prefix", ref isPrefix))
+        {
+            activityConfig.IsPrefix = isPrefix;
+            Config.Save();
+        }
+        ImGui.SameLine();
+        ImGui.Spacing();
+        ImGui.SameLine();
+
+        var checkboxSize = new Vector2(ImGui.GetTextLineHeightWithSpacing(), ImGui.GetTextLineHeightWithSpacing());
+
+        var color = activityConfig.Color;
+        if (ImGuiHelper.DrawColorPicker($"Color###{activityConfigId}Color", ref color, checkboxSize))
+        {
+            activityConfig.Color = color;
+            Config.Save();
+        }
+
+        ImGui.SameLine();
+        ImGui.Spacing();
+        ImGui.SameLine();
+        var glow = activityConfig.Glow;
+        if (ImGuiHelper.DrawColorPicker($"Glow###{activityConfigId}Glow", ref glow, checkboxSize))
+        {
+            activityConfig.Glow = glow;
+            Config.Save();
         }
     }
 

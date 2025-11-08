@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using SpotifyHonorific.Utils;
+using SpotifyHonorific.Activities;
 
 namespace SpotifyHonorific.Updaters;
 
@@ -17,6 +18,7 @@ public class Updater : IDisposable
 {
     private static readonly ushort MAX_TITLE_LENGTH = 32;
     private const double POLLING_INTERVAL_SECONDS = 2.0;
+    private const uint AFK_THRESHOLD_MS = 30000; // 30 seconds
 
     private IChatGui ChatGui { get; init; }
     private Config Config { get; init; }
@@ -26,7 +28,6 @@ public class Updater : IDisposable
     private ICallGateSubscriber<int, object> ClearCharacterTitleSubscriber { get; init; }
 
     public bool IsPlayerAfk { get; private set; } = false;
-    private const uint AfkThreshold = 30000; // 30 seconds in milliseconds
 
     private Action? UpdateTitle { get; set; }
     private string? UpdatedTitleJson { get; set; }
@@ -65,17 +66,25 @@ public class Updater : IDisposable
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        if (HandleAfkStatus()) return;
+
+        ProcessTitleUpdate(framework.UpdateDelta.TotalSeconds);
+        HandlePolling(framework.UpdateDelta.TotalSeconds);
+    }
+
+    private bool HandleAfkStatus()
+    {
         try
         {
-            this.IsPlayerAfk = NativeMethods.IdleTimeFinder.GetIdleTime() > AfkThreshold;
+            IsPlayerAfk = NativeMethods.IdleTimeFinder.GetIdleTime() > AFK_THRESHOLD_MS;
         }
         catch (Exception e)
         {
             PluginLog.Warning(e, "Could not get system idle time.");
-            this.IsPlayerAfk = false;
+            IsPlayerAfk = false;
         }
 
-        if (this.IsPlayerAfk && !this._isMusicPlaying)
+        if (IsPlayerAfk && !_isMusicPlaying)
         {
             if (!_hasLoggedAfk)
             {
@@ -84,26 +93,30 @@ public class Updater : IDisposable
             }
             ClearTitle();
             _pollingTimer = 0.0;
-            return;
-        }
-        else
-        {
-            _hasLoggedAfk = false;
+            return true;
         }
 
-        if (UpdateTitle != null)
-        {
-            UpdaterContext.SecsElapsed += framework.UpdateDelta.TotalSeconds;
-            try
-            {
-                UpdateTitle();
-            }
-            catch (Exception e)
-            {
-                PluginLog.Error(e.ToString());
-            }
-        }
+        _hasLoggedAfk = false;
+        return false;
+    }
 
+    private void ProcessTitleUpdate(double deltaSeconds)
+    {
+        if (UpdateTitle == null) return;
+
+        UpdaterContext.SecsElapsed += deltaSeconds;
+        try
+        {
+            UpdateTitle();
+        }
+        catch (Exception e)
+        {
+            PluginLog.Error(e.ToString());
+        }
+    }
+
+    private void HandlePolling(double deltaSeconds)
+    {
         if (!Config.Enabled)
         {
             if (UpdatedTitleJson != null)
@@ -113,22 +126,19 @@ public class Updater : IDisposable
             return;
         }
 
-        _pollingTimer += framework.UpdateDelta.TotalSeconds;
+        _pollingTimer += deltaSeconds;
 
-        double currentInterval = POLLING_INTERVAL_SECONDS;
-
-        if (_pollingTimer < currentInterval || Config.SpotifyRefreshToken.IsNullOrWhitespace() || _isPolling)
+        if (_pollingTimer < POLLING_INTERVAL_SECONDS || Config.SpotifyRefreshToken.IsNullOrWhitespace() || _isPolling)
         {
             return;
         }
 
         if (Config.EnableDebugLogging)
         {
-            PluginLog.Debug($"POLLING NOW. Timer: {_pollingTimer:F2}/{currentInterval}s | IsPlaying: {_isMusicPlaying}");
+            PluginLog.Debug($"POLLING NOW. Timer: {_pollingTimer:F2}/{POLLING_INTERVAL_SECONDS}s | IsPlaying: {_isMusicPlaying}");
         }
 
         _pollingTimer = 0.0;
-
         _ = PollSpotify();
     }
 
@@ -142,9 +152,7 @@ public class Updater : IDisposable
             var spotify = await GetSpotifyClient();
             if (spotify == null)
             {
-                _isMusicPlaying = false;
-                ClearTitle();
-                _isPolling = false;
+                HandleSpotifyError(null, "Spotify client is null, likely not authenticated.");
                 return;
             }
 
@@ -152,64 +160,7 @@ public class Updater : IDisposable
             if (currentlyPlaying != null && currentlyPlaying.IsPlaying && currentlyPlaying.Item is FullTrack track)
             {
                 _isMusicPlaying = true;
-                if (track.Id == CurrentTrackId)
-                {
-                    _isPolling = false;
-                    return;
-                }
-
-                CurrentTrackId = track.Id;
-
-                var activityConfig = Config.ActivityConfigs.Where(c => c.Enabled).OrderByDescending(c => c.Priority).FirstOrDefault();
-                if (activityConfig == null)
-                {
-                    ClearTitle();
-                    _isPolling = false;
-                    return;
-                }
-
-                UpdaterContext.SecsElapsed = 0;
-                UpdateTitle = () =>
-                {
-                    if (!Config.Enabled || !activityConfig.Enabled)
-                    {
-                        ClearTitle();
-                        return;
-                    }
-
-                    var titleTemplate = Template.Parse(activityConfig.TitleTemplate);
-                    var title = titleTemplate.Render(new { Activity = track, Context = UpdaterContext }, member => member.Name);
-
-                    if (title.Length > MAX_TITLE_LENGTH)
-                    {
-                        if (!DisplayedMaxLengthError)
-                        {
-                            var message = $"Title '{title}' is longer than {MAX_TITLE_LENGTH} characters, it won't be applied by honorific. Trim whitespaces or truncate variables to reduce the length.";
-                            PluginLog.Error(message);
-                            ChatGui.PrintError(message, "DiscordActivityHonorific");
-                            DisplayedMaxLengthError = true;
-                        }
-                        return;
-                    }
-                    DisplayedMaxLengthError = false;
-
-                    var data = new Dictionary<string, object>() {
-                        {"Title", title},
-                        {"IsPrefix", activityConfig.IsPrefix},
-                        {"Color", activityConfig.Color!},
-                        {"Glow", activityConfig.Glow!}
-                    };
-
-                    var serializedData = JsonConvert.SerializeObject(data, Formatting.Indented);
-                    if (serializedData == UpdatedTitleJson) return;
-
-                    if (Config.EnableDebugLogging)
-                    {
-                        PluginLog.Debug($"Call Honorific SetCharacterTitle IPC with:\n{serializedData}");
-                    }
-                    SetCharacterTitleSubscriber.InvokeAction(0, serializedData);
-                    UpdatedTitleJson = serializedData;
-                };
+                ProcessCurrentlyPlayingTrack(track);
             }
             else
             {
@@ -220,24 +171,104 @@ public class Updater : IDisposable
         }
         catch (APIException e)
         {
-            PluginLog.Warning(e, "Error polling Spotify. Token may be expired.");
-            CurrentAccessToken = null;
-            Spotify = null;
-            CurrentTrackId = null;
-            _isMusicPlaying = false;
-            ClearTitle();
+            HandleSpotifyError(e, "Error polling Spotify. Token may be expired.");
         }
         catch (Exception e)
         {
-            PluginLog.Error(e, "Unhandled error during Spotify poll");
-            CurrentTrackId = null;
-            _isMusicPlaying = false;
-            ClearTitle();
+            HandleSpotifyError(e, "Unhandled error during Spotify poll");
         }
         finally
         {
             _isPolling = false;
         }
+    }
+
+    private void ProcessCurrentlyPlayingTrack(FullTrack track)
+    {
+        if (track.Id == CurrentTrackId)
+        {
+            return;
+        }
+
+        CurrentTrackId = track.Id;
+
+        var activityConfig = Config.ActivityConfigs.Where(c => c.Enabled).OrderByDescending(c => c.Priority).FirstOrDefault();
+        if (activityConfig == null)
+        {
+            ClearTitle();
+            return;
+        }
+
+        UpdaterContext.SecsElapsed = 0;
+        UpdateTitle = CreateTitleUpdateAction(activityConfig, track);
+    }
+
+    private Action CreateTitleUpdateAction(ActivityConfig activityConfig, FullTrack track)
+    {
+        return () =>
+        {
+            if (!Config.Enabled || !activityConfig.Enabled)
+            {
+                ClearTitle();
+                return;
+            }
+
+            RenderAndSetTitle(activityConfig, track);
+        };
+    }
+
+    private void RenderAndSetTitle(ActivityConfig activityConfig, FullTrack track)
+    {
+        var titleTemplate = Template.Parse(activityConfig.TitleTemplate);
+        var title = titleTemplate.Render(new { Activity = track, Context = UpdaterContext }, member => member.Name);
+
+        if (title.Length > MAX_TITLE_LENGTH)
+        {
+            if (!DisplayedMaxLengthError)
+            {
+                var message = $"Title '{title}' is longer than {MAX_TITLE_LENGTH} characters, it won't be applied by honorific. Trim whitespaces or truncate variables to reduce the length.";
+                PluginLog.Error(message);
+                ChatGui.PrintError(message, "DiscordActivityHonorific");
+                DisplayedMaxLengthError = true;
+            }
+            return;
+        }
+        DisplayedMaxLengthError = false;
+
+        var data = new Dictionary<string, object>() {
+            {"Title", title},
+            {"IsPrefix", activityConfig.IsPrefix},
+            {"Color", activityConfig.Color!},
+            {"Glow", activityConfig.Glow!}
+        };
+
+        var serializedData = JsonConvert.SerializeObject(data, Formatting.Indented);
+        if (serializedData == UpdatedTitleJson) return;
+
+        if (Config.EnableDebugLogging)
+        {
+            PluginLog.Debug($"Call Honorific SetCharacterTitle IPC with:\n{serializedData}");
+        }
+        SetCharacterTitleSubscriber.InvokeAction(0, serializedData);
+        UpdatedTitleJson = serializedData;
+    }
+
+    private void HandleSpotifyError(Exception? e, string message)
+    {
+        if (e != null)
+        {
+            PluginLog.Warning(e, message);
+        }
+        else
+        {
+            PluginLog.Warning(message);
+        }
+
+        CurrentAccessToken = null;
+        Spotify = null;
+        CurrentTrackId = null;
+        _isMusicPlaying = false;
+        ClearTitle();
     }
 
     private async Task<SpotifyClient?> GetSpotifyClient()
