@@ -16,9 +16,9 @@ namespace SpotifyHonorific.Updaters;
 
 public class Updater : IDisposable
 {
-    private static readonly ushort MAX_TITLE_LENGTH = 32;
+    private const ushort MAX_TITLE_LENGTH = 32;
     private const double POLLING_INTERVAL_SECONDS = 2.0;
-    private const uint AFK_THRESHOLD_MS = 30000; // 30 seconds
+    private const uint AFK_THRESHOLD_MS = 30000;
 
     private IChatGui ChatGui { get; init; }
     private Config Config { get; init; }
@@ -42,6 +42,8 @@ public class Updater : IDisposable
     private string? CurrentTrackId { get; set; }
     private bool _hasLoggedAfk = false;
 
+    private readonly Dictionary<string, Template> _templateCache = [];
+
     public Updater(IChatGui chatGui, Config config, IFramework framework, IDalamudPluginInterface pluginInterface, IPluginLog pluginLog)
     {
         ChatGui = chatGui;
@@ -62,6 +64,7 @@ public class Updater : IDisposable
         {
             ClearCharacterTitleSubscriber.InvokeAction(0);
         });
+        GC.SuppressFinalize(this);
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -149,14 +152,14 @@ public class Updater : IDisposable
 
         try
         {
-            var spotify = await GetSpotifyClient();
+            var spotify = await GetSpotifyClient().ConfigureAwait(false);
             if (spotify == null)
             {
                 HandleSpotifyError(null, "Spotify client is null, likely not authenticated.");
                 return;
             }
 
-            var currentlyPlaying = await spotify.Player.GetCurrentlyPlaying(new PlayerCurrentlyPlayingRequest());
+            var currentlyPlaying = await spotify.Player.GetCurrentlyPlaying(new PlayerCurrentlyPlayingRequest()).ConfigureAwait(false);
             if (currentlyPlaying != null && currentlyPlaying.IsPlaying && currentlyPlaying.Item is FullTrack track)
             {
                 _isMusicPlaying = true;
@@ -219,7 +222,12 @@ public class Updater : IDisposable
 
     private void RenderAndSetTitle(ActivityConfig activityConfig, FullTrack track)
     {
-        var titleTemplate = Template.Parse(activityConfig.TitleTemplate);
+        if (!_templateCache.TryGetValue(activityConfig.TitleTemplate, out var titleTemplate))
+        {
+            titleTemplate = Template.Parse(activityConfig.TitleTemplate);
+            _templateCache[activityConfig.TitleTemplate] = titleTemplate;
+        }
+
         var title = titleTemplate.Render(new { Activity = track, Context = UpdaterContext }, member => member.Name);
 
         if (title.Length > MAX_TITLE_LENGTH)
@@ -288,7 +296,7 @@ public class Updater : IDisposable
         {
             var response = await new OAuthClient().RequestToken(
                 new PKCETokenRefreshRequest(Config.SpotifyClientId, Config.SpotifyRefreshToken)
-            );
+            ).ConfigureAwait(false);
 
             CurrentAccessToken = response.AccessToken;
 

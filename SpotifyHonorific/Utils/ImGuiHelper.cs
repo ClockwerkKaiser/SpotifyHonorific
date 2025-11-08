@@ -53,8 +53,8 @@ public class ImGuiHelper
                 ImGui.SetTooltip("Clear selected colour");
                 ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
             }
-            var dl = ImGui.GetWindowDrawList();
-            dl.AddLine(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), 0xFF0000FF, 3f * ImGuiHelpers.GlobalScale);
+            var drawList = ImGui.GetWindowDrawList();
+            drawList.AddLine(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), 0xFF0000FF, 3f * ImGuiHelpers.GlobalScale);
 
             if (color != null)
             {
@@ -82,12 +82,12 @@ public class ImGuiHelper
 
             if (ImGui.IsItemHovered())
             {
-                dl.AddRectFilled(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), 0x33333333);
+                drawList.AddRectFilled(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), 0x33333333);
                 ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
             }
 
             var textSize = ImGui.CalcTextSize("Confirm");
-            dl.AddText(ImGui.GetItemRectMin() + size / 2 - textSize / 2, ImGui.ColorConvertFloat4ToU32(new Vector4(_editingColour, 1)) ^ 0x00FFFFFF, "Confirm");
+            drawList.AddText(ImGui.GetItemRectMin() + (size / 2) - (textSize / 2), ImGui.ColorConvertFloat4ToU32(new Vector4(_editingColour, 1)) ^ 0x00FFFFFF, "Confirm");
             ImGui.ColorPicker3($"##ColorPick", ref _editingColour, ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview);
 
             ImGui.EndCombo();

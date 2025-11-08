@@ -16,7 +16,7 @@ public sealed class PKCECallbackActivator : IDisposable
 
     public PKCECallbackActivator(Uri serverUri, string callbackPath)
     {
-        if (!callbackPath.StartsWith("/"))
+        if (!callbackPath.StartsWith('/'))
         {
             callbackPath = $"/{callbackPath}";
         }

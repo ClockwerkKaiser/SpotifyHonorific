@@ -28,6 +28,11 @@ public class ConfigWindow : Window
     private string _spotifyClientSecretBuffer = string.Empty;
     private static PKCECallbackActivator? _spotifyAuthServer;
 
+    private string _lastAuthTimeString = string.Empty;
+    private DateTime _cachedAuthTime;
+
+    private static readonly string RecreateText = $"Recreate Defaults (V{ActivityConfig.DEFAULT_VERSION})";
+
     public ConfigWindow(Config config, ImGuiHelper imGuiHelper, Updater updater) : base("Spotify Activity Honorific Config##configWindow")
     {
         SizeConstraints = new WindowSizeConstraints
@@ -117,7 +122,12 @@ public class ConfigWindow : Window
         }
         else
         {
-            ImGui.TextColored(ImGuiColors.ParsedGreen, $"State: Authenticated (Last refresh: {Config.LastSpotifyAuthTime})");
+            if (_cachedAuthTime != Config.LastSpotifyAuthTime)
+            {
+                _lastAuthTimeString = $"State: Authenticated (Last refresh: {Config.LastSpotifyAuthTime})";
+                _cachedAuthTime = Config.LastSpotifyAuthTime;
+            }
+            ImGui.TextColored(ImGuiColors.ParsedGreen, _lastAuthTimeString);
         }
 
         if (ImGui.IsItemHovered())
@@ -143,16 +153,15 @@ public class ConfigWindow : Window
             Config.Save();
         }
 
-        var recreateText = $"Recreate Defaults (V{ActivityConfig.DEFAULT_VERSION})";
-        var recreateWidth = ImGui.CalcTextSize(recreateText).X + ImGui.GetStyle().FramePadding.X * 2.0f;
-        var deleteWidth = ImGui.CalcTextSize("Delete All").X + ImGui.GetStyle().FramePadding.X * 2.0f;
+        var recreateWidth = ImGui.CalcTextSize(RecreateText).X + (ImGui.GetStyle().FramePadding.X * 2.0f);
+        var deleteWidth = ImGui.CalcTextSize("Delete All").X + (ImGui.GetStyle().FramePadding.X * 2.0f);
         var spacing = ImGui.GetStyle().ItemSpacing.X;
 
         var contentWidth = ImGui.GetContentRegionMax().X;
 
         ImGui.SameLine(contentWidth - (recreateWidth + deleteWidth + spacing));
 
-        if (ImGui.Button(recreateText + "##activityConfigsRecreateDefaults"))
+        if (ImGui.Button(RecreateText + "##activityConfigsRecreateDefaults"))
         {
             Config.ActivityConfigs.AddRange(ActivityConfig.GetDefaults());
             Config.Save();
@@ -194,7 +203,7 @@ public class ConfigWindow : Window
             Config.Save();
         }
 
-        ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - (ImGui.CalcTextSize("Delete").X + ImGui.GetStyle().FramePadding.X * 2.0f));
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - (ImGui.CalcTextSize("Delete").X + (ImGui.GetStyle().FramePadding.X * 2.0f)));
         ImGui.PushStyleColor(ImGuiCol.Button, ImGuiColors.DalamudRed);
         if (ImGui.Button($"Delete###{activityConfigId}Delete"))
         {
@@ -247,7 +256,7 @@ public class ConfigWindow : Window
         ImGui.EndTabItem();
     }
 
-    private void DrawTemplateVariablesTable(string activityConfigId)
+    private static void DrawTemplateVariablesTable(string activityConfigId)
     {
         if (!ImGui.CollapsingHeader($"Available Template Variables###{activityConfigId}Properties")) return;
 
@@ -280,23 +289,13 @@ public class ConfigWindow : Window
         }
     }
 
-    private bool DrawTemplateInput(string label, ref string template, Vector2 size, string validTooltip)
+    private static bool DrawTemplateInput(string label, ref string template, Vector2 size, string validTooltip)
     {
         var changed = ImGui.InputTextMultiline(label, ref template, ushort.MaxValue, size);
 
         if (ImGui.IsItemHovered())
         {
-            if (!TryParseTemplate(template, out var errorMessages))
-            {
-                using (ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudRed))
-                {
-                    ImGui.SetTooltip(string.Join("\n", errorMessages));
-                }
-            }
-            else
-            {
-                ImGui.SetTooltip(validTooltip);
-            }
+            ImGui.SetTooltip(validTooltip);
         }
         return changed;
     }
@@ -341,7 +340,7 @@ public class ConfigWindow : Window
             _spotifyAuthServer?.Dispose();
             _spotifyAuthServer = new PKCECallbackActivator(serverUri, "callback");
 
-            await _spotifyAuthServer.Start();
+            await _spotifyAuthServer.Start().ConfigureAwait(false);
 
             var (verifier, challenge) = PKCEUtil.GenerateCodes();
             var loginRequest = new LoginRequest(_spotifyAuthServer.RedirectUri, Config.SpotifyClientId, LoginRequest.ResponseType.Code)
@@ -354,7 +353,7 @@ public class ConfigWindow : Window
             BrowserUtil.Open(loginRequest.ToUri());
 
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-            var context = await _spotifyAuthServer.ReceiveContext(timeoutCts.Token);
+            var context = await _spotifyAuthServer.ReceiveContext(timeoutCts.Token).ConfigureAwait(false);
 
             var code = context.Request.QueryString["code"];
             if (string.IsNullOrEmpty(code))
@@ -365,7 +364,7 @@ public class ConfigWindow : Window
 
             var tokenResponse = await new OAuthClient().RequestToken(
                 new PKCETokenRequest(Config.SpotifyClientId, code, _spotifyAuthServer.RedirectUri, verifier)
-            );
+            ).ConfigureAwait(false);
 
             Config.SpotifyRefreshToken = tokenResponse.RefreshToken;
             Config.LastSpotifyAuthTime = DateTime.Now;
