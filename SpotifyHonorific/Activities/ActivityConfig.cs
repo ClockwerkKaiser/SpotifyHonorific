@@ -36,6 +36,7 @@ public class ActivityConfig
     public string FilterTemplate { get; set; } = string.Empty;
     public string TitleTemplate { get; set; } = string.Empty;
     public bool IsPrefix { get; set; } = false;
+    public int RainbowMode { get; set; } = 1;
     public Vector3? Color { get; set; }
     public Vector3? Glow { get; set; }
 
